@@ -146,8 +146,8 @@ with col2:
         st.metric(
             label="Diferencia real",
             value=f"${abs(diferencia_real):,.0f}",
-            delta="Conviene cuotas" if diferencia_real < 0 else "Conviene contado",
-            delta_color="normal" if diferencia_real < 0 else "inverse"
+            delta="Conviene cuotas" if van_cuotas < precio_contado else "Conviene contado",
+            delta_color="normal" if van_cuotas < precio_contado else "inverse"
         )
 
 # Separador
@@ -297,26 +297,37 @@ st.divider()
 st.header("🎯 Recomendación")
 
 # Análisis de conveniencia
+# La decisión debe basarse en el VAN: si VAN < precio_contado, convienen las cuotas
 beneficio_cuotas = precio_contado - van_cuotas
-conviene_cuotas = tasa_financiacion_mensual < inflacion_mensual
+conviene_cuotas = van_cuotas < precio_contado
+
+# Mostrar nota explicativa si hay discrepancia
+if (tasa_financiacion_mensual < inflacion_mensual) and not conviene_cuotas:
+    st.info("""
+    **📌 Nota importante:** Aunque la tasa de financiación (%.2f%%) es menor que la inflación (%.1f%%), 
+    el sobreprecio inicial es tan alto (%.1f%%) que la inflación no alcanza a compensarlo completamente. 
+    Por eso el valor presente de las cuotas sigue siendo mayor que el precio de contado.
+    """ % (tasa_financiacion_mensual*100, inflacion_mensual*100, porcentaje_sobreprecio))
 
 # Crear el mensaje de recomendación
 if conviene_cuotas:
     st.success("### ✅ Te conviene comprar en CUOTAS")
     st.markdown(f"""
     **Razones principales:**
-    - La tasa de financiación ({tasa_financiacion_mensual*100:.2f}% mensual) es **menor** que la inflación ({inflacion_mensual*100:.1f}% mensual)
     - En términos reales, pagarás ${van_cuotas:,.0f} en lugar de ${precio_cuotas:,.0f}
+    - El valor presente de las cuotas (${van_cuotas:,.0f}) es menor que el precio de contado (${precio_contado:,.0f})
     - La inflación "licúa" ${ahorro_inflacion:,.0f} del costo de financiación
+    - Ahorras ${abs(beneficio_cuotas):,.0f} en términos reales
     - Mantienes liquidez para emergencias o inversiones
     """)
 else:
-    st.error("### ❌ Te conviene comprar de CONTADO")
+    st.warning("### ⚠️ Te conviene comprar de CONTADO")
     st.markdown(f"""
     **Razones principales:**
-    - La tasa de financiación ({tasa_financiacion_mensual*100:.2f}% mensual) es **mayor** que la inflación ({inflacion_mensual*100:.1f}% mensual)
-    - Pagarías ${diferencia_real:,.0f} adicionales en términos reales
-    - El sobreprecio de {porcentaje_sobreprecio:.1f}% no se compensa con la inflación
+    - El valor presente de las cuotas (${van_cuotas:,.0f}) es mayor que el precio de contado (${precio_contado:,.0f})
+    - Pagarías ${abs(diferencia_real):,.0f} adicionales en términos reales
+    - Aunque la inflación ayuda, no compensa completamente el sobreprecio
+    - La tasa efectiva después de inflación sigue siendo positiva
     """)
 
 # Tabla resumen
@@ -337,10 +348,10 @@ resumen_data = {
         "✅" if conviene_cuotas else "❌"
     ],
     'Diferencia': [
-        f"${sobreprecio:,.0f}",
-        f"${diferencia_real:,.0f}",
+        f"${sobreprecio:,.0f} ({porcentaje_sobreprecio:.1f}%)",
+        f"${abs(diferencia_real):,.0f} ({'a favor de cuotas' if conviene_cuotas else 'a favor de contado'})",
         f"{tasa_financiacion_mensual*100:.2f}% vs {inflacion_mensual*100:.1f}% inflación",
-        f"Ahorro real: ${abs(beneficio_cuotas):,.0f}"
+        f"{'Ahorro' if conviene_cuotas else 'Costo extra'}: ${abs(beneficio_cuotas):,.0f}"
     ]
 }
 
@@ -354,13 +365,24 @@ with st.expander("ℹ️ ¿Cómo funciona el cálculo?"):
     
     1. **Valor Presente de las cuotas**: Cada cuota futura se descuenta por la inflación para obtener su valor en pesos de hoy
     2. **Tasa de financiación**: Se calcula la tasa mensual implícita en el financiamiento
-    3. **Comparación**: Si la tasa de financiación es menor que la inflación, conviene financiar
+    3. **Comparación**: Se compara el valor presente total de las cuotas contra el precio de contado
     4. **Inversión alternativa** (opcional): Evalúa si es mejor invertir el dinero y pagar las cuotas con los rendimientos
     
     ### Fórmula del Valor Presente:
     ```
     VP = Cuota / (1 + inflación)^mes
+    VAN = Suma de todos los VP
     ```
+    
+    ### ¿Por qué a veces conviene contado aunque la tasa < inflación?
+    
+    Aunque la tasa de financiación sea menor que la inflación, el **sobreprecio inicial puede ser tan alto** 
+    que ni siquiera la inflación logra compensarlo completamente. Por eso es crucial calcular el valor 
+    presente neto (VAN) de todas las cuotas y compararlo con el precio de contado.
+    
+    **Regla de decisión:**
+    - Si VAN < Precio Contado → Convienen las cuotas
+    - Si VAN > Precio Contado → Conviene contado
     
     ### Consideraciones:
     - Este análisis asume inflación constante (en la realidad varía)
